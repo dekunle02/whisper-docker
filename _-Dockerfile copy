@@ -29,30 +29,16 @@ WORKDIR /app
 # ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 
 
-# RUN git clone  https://github.com/ggerganov/whisper.cpp.git && \
-#     cd whisper.cpp && \
-#     # Build the static library
-#     make libwhisper.a && \
-#     # Create directory structure expected by pywhispercpp
-#     mkdir -p /usr/local/include/whisper && \
-#     cp *.h /usr/local/include/whisper/ && \
-#     cp libwhisper.a /usr/local/lib/ && \
-#     cd ..
-#     # rm -rf whisper.cpp
-
-
-# Clone and build whisper.cpp properly
-RUN git clone https://github.com/ggerganov/whisper.cpp.git && \
+RUN git clone  https://github.com/ggerganov/whisper.cpp.git && \
     cd whisper.cpp && \
-    # Configure build
-    cmake . -DWHISPER_BUILD_STATIC=ON && \
     # Build the static library
-    cmake --build . && \
+    make libwhisper.a && \
     # Create directory structure expected by pywhispercpp
     mkdir -p /usr/local/include/whisper && \
     cp *.h /usr/local/include/whisper/ && \
     cp libwhisper.a /usr/local/lib/ && \
     cd ..
+    # rm -rf whisper.cpp
 
 # Set required environment variables for pywhispercpp
 ENV WHISPER_CPP_LIB=/usr/local/lib/libwhisper.a
