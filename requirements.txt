@@ -1,0 +1,7 @@
+fastapi==0.115.5
+uvicorn==0.32.1 
+python-multipart==0.0.17 
+pywhispercpp==1.2.0
+av==10.0.0
+numpy==1.21.2
+pydantic==2.10.1
