@@ -10,7 +10,7 @@ from whisper_cpp_python import Whisper
 # --- Configuration ---
 SCRIPT_DIR = Path(__file__).parent.resolve()
 MODEL_DIR = SCRIPT_DIR / "models"
-MODEL_NAME = "ggml-base.en.bin"
+MODEL_NAME = "ggml-small.en.bin"
 MODEL_PATH = MODEL_DIR / MODEL_NAME
 
 

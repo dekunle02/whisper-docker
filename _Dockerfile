@@ -42,11 +42,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Create a directory for models
 RUN mkdir models
 # Download the desired model (e.g., base.en). Find URLs on Hugging Face (ggerganov/whisper.cpp)
-ARG MODEL_URL=https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin
-ARG MODEL_DEST=/app/models/ggml-small.en.bin # Update destination filename
-RUN mkdir -p /app/models && \
-    wget --progress=bar:force -O ${MODEL_DEST} ${MODEL_URL}
-
+ARG MODEL_URL=https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin
+ARG MODEL_DEST=/app/models/ggml-base.en.bin
+RUN wget --progress=bar:force -O ${MODEL_DEST} ${MODEL_URL}
 
 # Unset CMAKE_ARGS if not needed later (optional, good practice)
 ENV CMAKE_ARGS=""
