@@ -1,33 +1,38 @@
 import os
 import tempfile
 import shutil
-import time
 from pathlib import Path
 from fastapi import FastAPI, File, UploadFile, HTTPException, status
 from pydub import AudioSegment
 from whisper_cpp_python import Whisper
 
 # --- Configuration ---
+# Determine the model path relative to the script location
+# Assumes the model is downloaded to a 'models' directory in the container
 SCRIPT_DIR = Path(__file__).parent.resolve()
 MODEL_DIR = SCRIPT_DIR / "models"
+# Use a specific model file (e.g., base.en). Make sure this matches the downloaded model.
 MODEL_NAME = "ggml-base.en.bin"
 MODEL_PATH = MODEL_DIR / MODEL_NAME
 
-
 # --- Whisper Model Loading ---
+# Load the model once when the application starts
 whisper_model = None
 if MODEL_PATH.exists():
     try:
+        # Initialize whisper.cpp wrapper
+        # Adjust parameters as needed (e.g., n_threads for CPU core usage)
         whisper_model = Whisper(
-            # model_path=str(MODEL_PATH), n_threads=max(4, os.cpu_count() // 2)
             model_path=str(MODEL_PATH),
-            n_threads=2,
+            # n_threads=max(4, os.cpu_count() // 2) # Example: Use half the CPU cores, minimum 4
+            # Adjust other whisper parameters here if needed
+            # See whisper_cpp_python documentation for options
+            # Example: params.language = b"en" # Force English
         )
-
         print(f"Successfully loaded Whisper model from: {MODEL_PATH}")
     except Exception as e:
         print(f"Error loading Whisper model: {e}")
-        # prevent the app from starting if the model fails to load
+        # You might want to prevent the app from starting if the model fails to load
         # raise RuntimeError(f"Could not load Whisper model: {e}") from e
 else:
     print(
@@ -41,7 +46,7 @@ app = FastAPI()
 
 @app.get("/")
 async def read_root():
-    return {"message": "Whisper.cpp Live"}
+    return {"message": "Whisper.cpp Transcription API"}
 
 
 @app.post("/transcribe/")
@@ -50,10 +55,6 @@ async def transcribe_audio(audio_file: UploadFile = File(...)):
     Receives an audio file, converts it to 16-bit WAV,
     transcribes it using whisper.cpp, and returns the text.
     """
-    print(f"Received file: size: {audio_file.size / (1024 * 1024):.2f} MB")
-    # --- Start Timing ---
-    start_time = time.perf_counter()
-
     if whisper_model is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -66,6 +67,7 @@ async def transcribe_audio(audio_file: UploadFile = File(...)):
         input_audio_path = temp_dir_path / (audio_file.filename or "input_audio")
         output_wav_path = temp_dir_path / "output.wav"
 
+        # 1. Save uploaded file temporarily
         try:
             with open(input_audio_path, "wb") as buffer:
                 shutil.copyfileobj(audio_file.file, buffer)
@@ -76,19 +78,30 @@ async def transcribe_audio(audio_file: UploadFile = File(...)):
                 detail=f"Error saving uploaded file: {e}",
             ) from e
         finally:
+            # Ensure the file pointer is closed
             await audio_file.close()
 
-        # Convert audio file to 16-bit WAV using pydub
+        # 2. Convert audio file to 16-bit WAV using pydub
         try:
             print(f"Attempting to load audio from: {input_audio_path}")
             audio = AudioSegment.from_file(input_audio_path)
+
             print(
                 f"Original audio - Channels: {audio.channels}, Sample width: {audio.sample_width}, Frame rate: {audio.frame_rate}"
             )
+
+            # Export as WAV (pydub defaults usually work well for whisper.cpp)
+            # Whisper.cpp expects 16kHz, mono, 16-bit PCM WAV
+            # Let's ensure these parameters
             audio = audio.set_frame_rate(16000)
             audio = audio.set_channels(1)
+            # Export with specific parameters for 16-bit PCM if needed,
+            # though pydub's default WAV export is usually pcm_s16le.
+            # format='wav', codec='pcm_s16le'
             audio.export(output_wav_path, format="wav")
+            print(f"Converted audio saved to: {output_wav_path}")
 
+            # Verify file existence
             if not output_wav_path.exists():
                 raise RuntimeError("WAV file was not created.")
 
@@ -104,8 +117,11 @@ async def transcribe_audio(audio_file: UploadFile = File(...)):
                 detail=f"Error converting audio file. Ensure it's a valid format (e.g., MP3, WAV, M4A, OGG). Details: {e}",
             ) from e
 
-        # Transcribe using whisper.cpp
+        # 3. Transcribe using whisper.cpp via the Python wrapper
         try:
+            print(f"Starting transcription for: {output_wav_path}")
+
+            # Perform transcription
             result = whisper_model.transcribe(str(output_wav_path), language="en")
 
             # Check if result is structured differently (depends on whisper_cpp_python version)
@@ -119,13 +135,7 @@ async def transcribe_audio(audio_file: UploadFile = File(...)):
                 print(f"Unexpected transcription result format: {result}")
                 transcription_text = str(result).strip()  # Fallback
 
-            # --- End Timing ---
-            end_time = time.perf_counter()
-            transcription_duration = end_time - start_time
-            print(
-                f"Transcription successfully took: {transcription_duration:.4f} seconds"
-            )
-
+            print(f"Transcription successful: {transcription_text}")
             return {"transcription": transcription_text}
 
         except Exception as e:
@@ -134,6 +144,7 @@ async def transcribe_audio(audio_file: UploadFile = File(...)):
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Error during transcription: {e}",
             ) from e
+        # Temporary directory and its contents are automatically cleaned up by the 'with' statement
 
 
 # Optional: Add logic to run Uvicorn directly if the script is executed
