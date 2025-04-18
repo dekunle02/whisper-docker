@@ -1,73 +1,59 @@
-FROM ubuntu:22.04
+# Use an official Python runtime matching the suspected version and newer distro
+FROM python:3.11-slim-bookworm
 
-# Install dependencies
-RUN apt-get update && apt-get install -y \
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=off \
+    PIP_DISABLE_PIP_VERSION_CHECK=on \
+    PIP_DEFAULT_TIMEOUT=100
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
-    wget \
-    git \
     ffmpeg \
-    python3 \
-    python3-pip \
-    pkg-config \
+    git \
+    wget \
     ninja-build \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+# Check CMake version (for debugging)
+RUN cmake --version
 
+# Set the working directory in the container
 WORKDIR /app
 
-# clone whisper.cpp
-# RUN git clone https://github.com/ggerganov/whisper.cpp.git && \
-#     cd whisper.cpp && \
-#     ./models/download-ggml-model.sh base.en && \
-#     make && \
-#     cp libwhisper.so /usr/local/lib/ && \
-#     cd .. && \
-#     rm -rf whisper.cpp
+# Upgrade pip, setuptools, and wheel first
+RUN pip install --upgrade pip setuptools wheel
 
-# Set library path
-# ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
-
-
-# RUN git clone  https://github.com/ggerganov/whisper.cpp.git && \
-#     cd whisper.cpp && \
-#     # Build the static library
-#     make libwhisper.a && \
-#     # Create directory structure expected by pywhispercpp
-#     mkdir -p /usr/local/include/whisper && \
-#     cp *.h /usr/local/include/whisper/ && \
-#     cp libwhisper.a /usr/local/lib/ && \
-#     cd ..
-#     # rm -rf whisper.cpp
-
-
-# Clone and build whisper.cpp properly
-RUN git clone https://github.com/ggerganov/whisper.cpp.git && \
-    cd whisper.cpp && \
-    # Configure build
-    cmake . -DWHISPER_BUILD_STATIC=ON && \
-    # Build the static library
-    cmake --build . && \
-    # Create directory structure expected by pywhispercpp
-    mkdir -p /usr/local/include/whisper && \
-    cp *.h /usr/local/include/whisper/ && \
-    cp libwhisper.a /usr/local/lib/ && \
-    cd ..
-
-# Set required environment variables for pywhispercpp
-ENV WHISPER_CPP_LIB=/usr/local/lib/libwhisper.a
-ENV WHISPER_CPP_INCLUDE=/usr/local/include
-
-
-
+# Copy the requirements file into the container
 COPY requirements.txt .
+
+# --- Attempt to fix CMake build ---
+# Set CMAKE_ARGS to try and force the policy version suggested by the error
+ENV CMAKE_ARGS="-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
+
+# Install Python dependencies from requirements.txt
+# This will attempt to build whisper-cpp-python using the CMAKE_ARGS above
 RUN pip install --no-cache-dir -r requirements.txt
 
+# --- Download Whisper Model ---
+# Create a directory for models
+RUN mkdir models
+# Download the desired model (e.g., base.en). Find URLs on Hugging Face (ggerganov/whisper.cpp)
+ARG MODEL_URL=https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin
+ARG MODEL_DEST=/app/models/ggml-base.en.bin
+RUN wget --progress=bar:force -O ${MODEL_DEST} ${MODEL_URL}
 
+# Unset CMAKE_ARGS if not needed later (optional, good practice)
+ENV CMAKE_ARGS=""
+
+# Copy the rest of the application code into the container
 COPY . .
 
-
+# Expose the port the app runs on
 EXPOSE 8000
 
-
+# Command to run the application using uvicorn
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
